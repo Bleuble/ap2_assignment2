@@ -44,12 +44,20 @@ func main() {
 
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		log.Fatalf("failed to connect to db: %v", err)
+		log.Fatalf("failed to open db: %v", err)
 	}
 	defer db.Close()
 
-	if err := db.Ping(); err != nil {
-		log.Fatalf("failed to ping db: %v", err)
+	for i := 0; i < 10; i++ {
+		err = db.Ping()
+		if err == nil {
+			break
+		}
+		log.Printf("failed to ping db, retrying in 2s... (%v)", err)
+		time.Sleep(2 * time.Second)
+	}
+	if err != nil {
+		log.Fatalf("failed to connect to db after retries: %v", err)
 	}
 
 	redisURL := os.Getenv("REDIS_URL")

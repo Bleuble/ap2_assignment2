@@ -31,11 +31,12 @@ services:
     environment:
       - DATABASE_URL=postgres://postgres:admin@db:5432/order_db?sslmode=disable
       - PAYMENT_GRPC_URL=payment-service:50051
-      - REDIS_URL=redis:6379
+      - REDIS_URL=redis://redis:6379
     depends_on:
       - db
       - payment-service
       - redis
+    restart: on-failure
 
   payment-service:
     build:
@@ -49,17 +50,19 @@ services:
     depends_on:
       - db
       - rabbitmq
+    restart: on-failure
 
   notification-service:
     build:
       context: ./notification-service
     environment:
       - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-      - REDIS_URL=redis:6379
+      - REDIS_URL=redis://redis:6379
       - PROVIDER_MODE=SIMULATED
     depends_on:
       - rabbitmq
       - redis
+    restart: on-failure
 
 volumes:
   postgres_data:
