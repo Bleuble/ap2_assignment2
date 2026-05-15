@@ -2,14 +2,14 @@ package app
 
 import (
 	"bytes"
-	"context" // Added for gRPC
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
 
-	pb "github.com/Bleuble/my-grpc-generated/payment/v1" // Added generated proto
-	"google.golang.org/grpc"                           // Added gRPC
+	pb "github.com/Bleuble/my-grpc-generated/payment/v1"
+	"google.golang.org/grpc"
 )
 
 type HttpPaymentClient struct {
@@ -77,6 +77,10 @@ func (c *HttpPaymentClient) AuthorizePayment(orderID string, amount int64) (stri
 	return res.TransactionID, nil
 }
 
+func (c *HttpPaymentClient) ListPayments(status string) (interface{}, error) {
+	return nil, fmt.Errorf("ListPayments not implemented for HTTP client")
+}
+
 // GrpcPaymentClient implements domain.PaymentClient using gRPC
 type GrpcPaymentClient struct {
 	client pb.PaymentServiceClient
@@ -89,7 +93,7 @@ func NewGrpcPaymentClient(conn *grpc.ClientConn) *GrpcPaymentClient {
 }
 
 func (c *GrpcPaymentClient) AuthorizePayment(orderID string, amount int64) (string, error) {
-	// Call the remote Payment Service via gRPC
+
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
@@ -107,4 +111,8 @@ func (c *GrpcPaymentClient) AuthorizePayment(orderID string, amount int64) (stri
 	}
 
 	return resp.TransactionId, nil
+}
+
+func (c *GrpcPaymentClient) ListPayments(status string) (interface{}, error) {
+	return nil, fmt.Errorf("ListPayments not supported in current gRPC proto")
 }

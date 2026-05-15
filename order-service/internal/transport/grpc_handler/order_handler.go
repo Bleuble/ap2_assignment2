@@ -3,8 +3,8 @@ package grpc_handler
 import (
 	"log"
 
-	"order-service/internal/usecase"
 	orderv1 "github.com/Bleuble/my-grpc-generated/order/v1"
+	"order-service/internal/usecase"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -21,11 +21,9 @@ func NewOrderHandler(uc *usecase.OrderUseCase) *OrderHandler {
 func (h *OrderHandler) SubscribeToOrderUpdates(req *orderv1.OrderRequest, stream orderv1.OrderTrackingService_SubscribeToOrderUpdatesServer) error {
 	log.Printf("New subscriber for Order: %s", req.OrderId)
 
-	// Subscribe to updates from UseCase
 	ch, cleanup := h.useCase.Subscribe(req.OrderId)
 	defer cleanup()
 
-	// Initial check: if order exists, send current status
 	order, err := h.useCase.GetOrder(req.OrderId)
 	if err == nil && order != nil {
 		err := stream.Send(&orderv1.OrderStatusUpdate{
@@ -38,7 +36,6 @@ func (h *OrderHandler) SubscribeToOrderUpdates(req *orderv1.OrderRequest, stream
 		}
 	}
 
-	// Wait for updates and stream them
 	for {
 		select {
 		case <-stream.Context().Done():

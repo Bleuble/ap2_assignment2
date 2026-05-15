@@ -17,7 +17,7 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 	query := `
 		INSERT INTO orders (id, customer_id, item_name, amount, status, idempotency_key, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)`
-	
+
 	_, err := r.db.Exec(query,
 		order.ID, order.CustomerID, order.ItemName, order.Amount,
 		order.Status, order.IdempotencyKey, order.CreatedAt,
@@ -28,7 +28,7 @@ func (r *PostgresOrderRepository) Create(order *domain.Order) error {
 func (r *PostgresOrderRepository) GetByID(id string) (*domain.Order, error) {
 	query := `SELECT id, customer_id, item_name, amount, status, idempotency_key, created_at FROM orders WHERE id = $1`
 	var o domain.Order
-	
+
 	err := r.db.QueryRow(query, id).Scan(
 		&o.ID, &o.CustomerID, &o.ItemName, &o.Amount,
 		&o.Status, &o.IdempotencyKey, &o.CreatedAt,
@@ -36,14 +36,14 @@ func (r *PostgresOrderRepository) GetByID(id string) (*domain.Order, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &o, nil
 }
 
 func (r *PostgresOrderRepository) GetByIdempotencyKey(key string) (*domain.Order, error) {
 	query := `SELECT id, customer_id, item_name, amount, status, idempotency_key, created_at FROM orders WHERE idempotency_key = $1`
 	var o domain.Order
-	
+
 	err := r.db.QueryRow(query, key).Scan(
 		&o.ID, &o.CustomerID, &o.ItemName, &o.Amount,
 		&o.Status, &o.IdempotencyKey, &o.CreatedAt,
@@ -51,7 +51,7 @@ func (r *PostgresOrderRepository) GetByIdempotencyKey(key string) (*domain.Order
 	if err != nil {
 		return nil, err
 	}
-	
+
 	return &o, nil
 }
 

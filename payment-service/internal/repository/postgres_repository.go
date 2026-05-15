@@ -17,7 +17,7 @@ func (r *PostgresPaymentRepository) Save(payment *domain.Payment) error {
 	query := `
 		INSERT INTO payments (id, order_id, transaction_id, amount, status)
 		VALUES ($1, $2, $3, $4, $5)`
-	
+
 	_, err := r.db.Exec(query,
 		payment.ID, payment.OrderID, payment.TransactionID, payment.Amount, payment.Status,
 	)
@@ -34,4 +34,29 @@ func (r *PostgresPaymentRepository) GetByOrderID(orderID string) (*domain.Paymen
 		return nil, err
 	}
 	return &p, nil
+}
+
+func (r *PostgresPaymentRepository) ListByStatus(status string) ([]*domain.Payment, error) {
+	query := `SELECT id, order_id, transaction_id, amount, status FROM payments WHERE status = $1`
+	rows, err := r.db.Query(query, status)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var payments []*domain.Payment
+	for rows.Next() {
+		var p domain.Payment
+		err := rows.Scan(&p.ID, &p.OrderID, &p.TransactionID, &p.Amount, &p.Status)
+		if err != nil {
+			return nil, err
+		}
+		payments = append(payments, &p)
+	}
+
+	if err = rows.Err(); err != nil {
+		return nil, err
+	}
+
+	return payments, nil
 }

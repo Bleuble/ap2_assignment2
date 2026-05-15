@@ -56,7 +56,7 @@ func (uc *OrderUseCase) notify(orderID string, status string) {
 			select {
 			case ch <- status:
 			default:
-				// Skip if channel is full to prevent blocking
+
 			}
 		}
 	}
@@ -87,19 +87,19 @@ func (uc *OrderUseCase) CreateOrder(customerID, itemName string, amount int64, i
 	if err := uc.repo.Create(order); err != nil {
 		return nil, fmt.Errorf("failed to save order: %v", err)
 	}
-	uc.notify(order.ID, order.Status) // Notify Pending
+	uc.notify(order.ID, order.Status)
 
 	_, err := uc.paymentClient.AuthorizePayment(order.ID, order.Amount)
 	if err != nil {
 		order.DanaFailed()
 		uc.repo.UpdateStatus(order.ID, order.Status)
-		uc.notify(order.ID, order.Status) // Notify Failed
+		uc.notify(order.ID, order.Status)
 		return order, fmt.Errorf("payment failed: %v", err)
 	}
 
 	order.DanaPaid()
 	uc.repo.UpdateStatus(order.ID, order.Status)
-	uc.notify(order.ID, order.Status) // Notify Paid
+	uc.notify(order.ID, order.Status)
 
 	return order, nil
 }
@@ -120,7 +120,7 @@ func (uc *OrderUseCase) CancelOrder(id string) error {
 
 	err = uc.repo.UpdateStatus(order.ID, order.Status)
 	if err == nil {
-		uc.notify(order.ID, order.Status) // Notify Cancelled
+		uc.notify(order.ID, order.Status)
 	}
 	return err
 }
@@ -137,4 +137,8 @@ func (uc *OrderUseCase) GetOrdersByAmountRange(min, max int64) ([]*domain.Order,
 	}
 
 	return uc.repo.GetByAmountRange(min, max)
+}
+
+func (uc *OrderUseCase) ListPayments(status string) (interface{}, error) {
+	return uc.paymentClient.ListPayments(status)
 }

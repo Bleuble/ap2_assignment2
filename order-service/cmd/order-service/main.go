@@ -6,12 +6,12 @@ import (
 	"net"
 	"os"
 
+	orderv1 "github.com/Bleuble/my-grpc-generated/order/v1"
 	"order-service/internal/app"
 	"order-service/internal/repository"
 	"order-service/internal/transport/grpc_handler"
 	"order-service/internal/transport/http"
 	"order-service/internal/usecase"
-	orderv1 "github.com/Bleuble/my-grpc-generated/order/v1"
 
 	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
@@ -19,7 +19,7 @@ import (
 )
 
 func main() {
-	// 1. Get configuration from Environment Variables
+
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://postgres:admin@localhost:5433/order_db?sslmode=disable"
@@ -40,7 +40,6 @@ func main() {
 		restPort = "8080"
 	}
 
-	// 2. Database Connection
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("failed to connect to db: %v", err)
@@ -51,7 +50,6 @@ func main() {
 		log.Fatalf("failed to ping db: %v", err)
 	}
 
-	// 3. Initialize gRPC Client for Payment Service
 	conn, err := grpc.Dial(paymentServiceAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("did not connect to payment service: %v", err)
@@ -59,11 +57,9 @@ func main() {
 	defer conn.Close()
 	paymentClient := app.NewGrpcPaymentClient(conn)
 
-	// 4. Initialize layers
 	orderRepo := repository.NewPostgresOrderRepository(db)
 	orderUseCase := usecase.NewOrderUseCase(orderRepo, paymentClient)
 
-	// --- gRPC SERVER (Order Tracking) ---
 	go func() {
 		lis, err := net.Listen("tcp", ":"+grpcPort)
 		if err != nil {
@@ -79,13 +75,12 @@ func main() {
 		}
 	}()
 
-	// --- REST SERVER ---
 	router := gin.Default()
 	orderHandler := http.NewOrderHandler(orderUseCase)
 	orderHandler.RegisterRoutes(router)
 
 	log.Printf("Order HTTP Service is running on port %s...", restPort)
-	if err := router.Run(":"+restPort); err != nil {
+	if err := router.Run(":" + restPort); err != nil {
 		log.Fatalf("failed to run REST server: %v", err)
 	}
 }

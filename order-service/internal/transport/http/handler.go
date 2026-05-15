@@ -21,6 +21,7 @@ func (h *OrderHandler) RegisterRoutes(router *gin.Engine) {
 	router.GET("/orders/:id", h.GetOrder)
 	router.PATCH("/orders/:id/cancel", h.CancelOrder)
 	router.GET("/orders/filter", h.GetOrdersByRange)
+	router.GET("/payments", h.ListPayments)
 }
 
 type CreateOrderRequest struct {
@@ -44,7 +45,7 @@ func (h *OrderHandler) CreateOrder(c *gin.Context) {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		
+
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
 		return
 	}
@@ -81,8 +82,7 @@ func (h *OrderHandler) GetOrdersByRange(c *gin.Context) {
 		min, max int64
 		err      error
 	)
-	
-	
+
 	_, err = fmt.Sscan(minStr, &min)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid min parameter"})
@@ -101,4 +101,20 @@ func (h *OrderHandler) GetOrdersByRange(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, orders)
+}
+
+func (h *OrderHandler) ListPayments(c *gin.Context) {
+	status := c.Query("status")
+	if status == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "status query parameter is required"})
+		return
+	}
+
+	payments, err := h.useCase.ListPayments(status)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, payments)
 }
