@@ -6,30 +6,43 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
 	"time"
+
+	"notification-service/internal/domain"
+	"notification-service/internal/infrastructure"
+	"notification-service/internal/usecase"
 
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-type PaymentEvent struct {
-	OrderID       string `json:"order_id"`
-	Amount        int64  `json:"amount"`
-	CustomerEmail string `json:"customer_email"`
-	Status        string `json:"status"`
-}
-
-var processedMessages sync.Map
-
 func main() {
+
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "localhost:6379"
+	}
+	idempotencyStore, err := infrastructure.NewRedisIdempotencyStore(redisURL)
+	if err != nil {
+		log.Printf("Warning: Could not connect to Redis for idempotency: %v", err)
+	}
+
+	providerMode := os.Getenv("PROVIDER_MODE")
+	var provider domain.NotificationProvider
+	if providerMode == "REAL" {
+		provider = infrastructure.NewRealProvider()
+	} else {
+		provider = infrastructure.NewSimulatedProvider()
+	}
+
+	worker := usecase.NewNotificationWorker(provider, idempotencyStore)
+
 	rabbitURL := os.Getenv("RABBITMQ_URL")
 	if rabbitURL == "" {
 		rabbitURL = "amqp://guest:guest@localhost:5672/"
 	}
 
 	var conn *amqp.Connection
-	var err error
 	for i := 0; i < 5; i++ {
 		conn, err = amqp.Dial(rabbitURL)
 		if err == nil {
@@ -49,38 +62,17 @@ func main() {
 	}
 	defer ch.Close()
 
-	err = ch.ExchangeDeclare(
-		"payment.dlx",
-		"direct",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
+	err = ch.ExchangeDeclare("payment.dlx", "direct", true, false, false, false, nil)
 	if err != nil {
 		log.Fatalf("Failed to declare DLX: %v", err)
 	}
 
-	_, err = ch.QueueDeclare(
-		"payment.dlq",
-		true,
-		false,
-		false,
-		false,
-		nil,
-	)
+	_, err = ch.QueueDeclare("payment.dlq", true, false, false, false, nil)
 	if err != nil {
 		log.Fatalf("Failed to declare DLQ: %v", err)
 	}
 
-	err = ch.QueueBind(
-		"payment.dlq",
-		"dlq_key",
-		"payment.dlx",
-		false,
-		nil,
-	)
+	err = ch.QueueBind("payment.dlq", "dlq_key", "payment.dlx", false, nil)
 	if err != nil {
 		log.Fatalf("Failed to bind DLQ: %v", err)
 	}
@@ -90,27 +82,12 @@ func main() {
 		"x-dead-letter-routing-key": "dlq_key",
 	}
 
-	q, err := ch.QueueDeclare(
-		"payment.completed",
-		true,
-		false,
-		false,
-		false,
-		args,
-	)
+	q, err := ch.QueueDeclare("payment.completed", true, false, false, false, args)
 	if err != nil {
 		log.Fatalf("Failed to declare queue: %v", err)
 	}
 
-	msgs, err := ch.Consume(
-		q.Name,
-		"",
-		false,
-		false,
-		false,
-		false,
-		nil,
-	)
+	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
 	if err != nil {
 		log.Fatalf("Failed to register a consumer: %v", err)
 	}
@@ -124,16 +101,9 @@ func main() {
 		for d := range msgs {
 			log.Printf("Received a message: %s (MsgId: %s)", d.Body, d.MessageId)
 
-			if _, loaded := processedMessages.LoadOrStore(d.MessageId, true); loaded {
-				log.Printf("Duplicate message ignored: %s", d.MessageId)
-				d.Ack(false)
-				continue
-			}
-
-			var event PaymentEvent
+			var event domain.NotificationEvent
 			if err := json.Unmarshal(d.Body, &event); err != nil {
 				log.Printf("Error parsing message: %v", err)
-
 				d.Nack(false, false)
 				continue
 			}
@@ -144,7 +114,11 @@ func main() {
 				continue
 			}
 
-			log.Printf("[Notification] Sent email to %s for Order #%s. Amount: $%v", event.CustomerEmail, event.OrderID, float64(event.Amount)/100.0)
+			if err := worker.ProcessEvent(d.MessageId, event); err != nil {
+				log.Printf("Worker failed to process event: %v", err)
+				d.Nack(false, false)
+				continue
+			}
 
 			d.Ack(false)
 		}

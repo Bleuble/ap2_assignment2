@@ -7,3 +7,9 @@ type OrderRepository interface {
 	UpdateStatus(id string, status string) error
 	GetByAmountRange(min, max int64) ([]*Order, error)
 }
+
+type OrderCache interface {
+	Set(order *Order) error
+	Get(id string) (*Order, error)
+	Invalidate(id string) error
+}

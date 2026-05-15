@@ -12,14 +12,16 @@ import (
 type OrderUseCase struct {
 	repo          domain.OrderRepository
 	paymentClient domain.PaymentClient
+	cache         domain.OrderCache
 	mu            sync.RWMutex
 	subscribers   map[string][]chan string
 }
 
-func NewOrderUseCase(repo domain.OrderRepository, paymentClient domain.PaymentClient) *OrderUseCase {
+func NewOrderUseCase(repo domain.OrderRepository, paymentClient domain.PaymentClient, cache domain.OrderCache) *OrderUseCase {
 	return &OrderUseCase{
 		repo:          repo,
 		paymentClient: paymentClient,
+		cache:         cache,
 		subscribers:   make(map[string][]chan string),
 	}
 }
@@ -87,25 +89,50 @@ func (uc *OrderUseCase) CreateOrder(customerID, itemName string, amount int64, i
 	if err := uc.repo.Create(order); err != nil {
 		return nil, fmt.Errorf("failed to save order: %v", err)
 	}
+	if uc.cache != nil {
+		uc.cache.Set(order)
+	}
 	uc.notify(order.ID, order.Status)
 
 	_, err := uc.paymentClient.AuthorizePayment(order.ID, order.Amount)
 	if err != nil {
 		order.DanaFailed()
 		uc.repo.UpdateStatus(order.ID, order.Status)
+		if uc.cache != nil {
+			uc.cache.Invalidate(order.ID)
+		}
 		uc.notify(order.ID, order.Status)
 		return order, fmt.Errorf("payment failed: %v", err)
 	}
 
 	order.DanaPaid()
 	uc.repo.UpdateStatus(order.ID, order.Status)
+	if uc.cache != nil {
+		uc.cache.Invalidate(order.ID)
+	}
 	uc.notify(order.ID, order.Status)
 
 	return order, nil
 }
 
 func (uc *OrderUseCase) GetOrder(id string) (*domain.Order, error) {
-	return uc.repo.GetByID(id)
+	if uc.cache != nil {
+		cachedOrder, err := uc.cache.Get(id)
+		if err == nil && cachedOrder != nil {
+			return cachedOrder, nil
+		}
+	}
+
+	order, err := uc.repo.GetByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	if uc.cache != nil && order != nil {
+		uc.cache.Set(order)
+	}
+
+	return order, nil
 }
 
 func (uc *OrderUseCase) CancelOrder(id string) error {
@@ -120,6 +147,9 @@ func (uc *OrderUseCase) CancelOrder(id string) error {
 
 	err = uc.repo.UpdateStatus(order.ID, order.Status)
 	if err == nil {
+		if uc.cache != nil {
+			uc.cache.Invalidate(order.ID)
+		}
 		uc.notify(order.ID, order.Status)
 	}
 	return err

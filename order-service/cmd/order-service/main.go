@@ -5,9 +5,11 @@ import (
 	"log"
 	"net"
 	"os"
+	"time"
 
 	orderv1 "github.com/Bleuble/my-grpc-generated/order/v1"
 	"order-service/internal/app"
+	"order-service/internal/infrastructure"
 	"order-service/internal/repository"
 	"order-service/internal/transport/grpc_handler"
 	"order-service/internal/transport/http"
@@ -50,6 +52,16 @@ func main() {
 		log.Fatalf("failed to ping db: %v", err)
 	}
 
+	redisURL := os.Getenv("REDIS_URL")
+	if redisURL == "" {
+		redisURL = "localhost:6379"
+	}
+
+	orderCache, err := infrastructure.NewRedisOrderCache(redisURL, 5*time.Minute)
+	if err != nil {
+		log.Printf("Warning: Redis cache not available: %v", err)
+	}
+
 	conn, err := grpc.Dial(paymentServiceAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatalf("did not connect to payment service: %v", err)
@@ -58,7 +70,7 @@ func main() {
 	paymentClient := app.NewGrpcPaymentClient(conn)
 
 	orderRepo := repository.NewPostgresOrderRepository(db)
-	orderUseCase := usecase.NewOrderUseCase(orderRepo, paymentClient)
+	orderUseCase := usecase.NewOrderUseCase(orderRepo, paymentClient, orderCache)
 
 	go func() {
 		lis, err := net.Listen("tcp", ":"+grpcPort)
@@ -76,6 +88,12 @@ func main() {
 	}()
 
 	router := gin.Default()
+
+	if orderCache != nil {
+
+		router.Use(http.RateLimiterMiddleware(orderCache.GetClient(), 10, time.Minute))
+	}
+
 	orderHandler := http.NewOrderHandler(orderUseCase)
 	orderHandler.RegisterRoutes(router)
 
